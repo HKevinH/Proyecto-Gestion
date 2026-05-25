@@ -15,6 +15,8 @@
   
 Sistema web para evaluar y monitorear el nivel de gobernanza de la inteligencia artificial (IA) en las empresas. Permite a las organizaciones completar evaluaciones, generar hojas de ruta automáticas y monitorear el cumplimiento ético y técnico de sus sistemas de IA.
 
+Para una instalación más guiada y documentación adicional, consulta el [GitBook del proyecto](https://losfantasticos.gitbook.io/losfantasticos-docs).
+
 ## 🎯 Objetivo Principal
 
 Proporcionar a las organizaciones una plataforma digital que facilite la evaluación de cumplimiento ético y técnico de los sistemas de IA, ofreciendo una hoja de ruta práctica y personalizada para implementar buenas prácticas de gobernanza.
