@@ -1,5 +1,9 @@
 # Sistema de Evaluación de Gobernanza de IA
 
+> [!WARNING]
+> ## NO USAR EN LA UNIVERSIDAD SANTIAGO DE CALI
+> Si este proyecto se va a utilizar, hacerlo desde otra red o usando una VPN.
+
 - Juan Esteban Marin (Ejecucion y desarrollador)
 - Gloria Paola Castillo (Cierre / Diseño)
 - Andres Felipe Mejia (Planeador / Pruebas)
