@@ -464,11 +464,21 @@ export function EvaluationCompletedPage({ onBack, onDownloadPdf }) {
       }
 
       const axiosClient = window.axios || axios;
+
+      // Intentar regenerar PDF con puntuación oficial (si hay HTML guardado)
+      try {
+        await axiosClient.post(`/api/evaluation/${id}/regenerate-pdf`, {}, { timeout: 180000 });
+      } catch (regenErr) {
+        if (regenErr.response?.status === 404) {
+          await axiosClient.post(`/api/evaluation/${id}/resend-n8n`, {}, { timeout: 60000 });
+          alert('El informe se está regenerando con la puntuación correcta. Espera 1-3 minutos y vuelve a descargar.');
+          return;
+        }
+      }
       
-      // Usar el endpoint de descarga que valida permisos y envía headers correctos
       const response = await axiosClient.get(`/api/evaluation/${id}/download-pdf`, {
-        responseType: 'blob', // Importante: indicar que esperamos un archivo binario
-        timeout: 60000, // 60 segundos de timeout para archivos grandes
+        responseType: 'blob',
+        timeout: 180000,
       });
 
       // Crear un blob del PDF descargado

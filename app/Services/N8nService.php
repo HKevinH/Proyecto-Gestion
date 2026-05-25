@@ -186,6 +186,7 @@ class N8nService
                 'correo' => $metadatos['correo'] ?? 'N/A',
                 'sector' => $metadatos['sector'] ?? 'N/A',
                 'ponderaciones' => $metadatos['ponderaciones'] ?? [],
+                'puntuacion_global' => $metadatos['puntuacion_global'] ?? null,
                 'prompt_ia' => $metadatos['prompt'] ?? '',
             ],
             

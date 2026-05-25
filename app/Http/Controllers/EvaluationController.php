@@ -147,17 +147,36 @@ class EvaluationController extends Controller
             // Verificar si se completaron todas las respuestas (50 preguntas)
             $totalRespuestas = count(array_filter($request->respuestas, function($r) { return !empty($r); }));
             $evaluacionCompletada = ($totalRespuestas >= 50);
+
+            $sector = $usuarioCompleto->Sector ?? 'Industrial';
+            if ($sector === 'N/A' || trim($sector) === '') {
+                $sector = 'Industrial';
+            }
+            $ponderaciones = EvaluationHelper::getPonderacionesPorSector($sector);
+
+            $puntuacionGlobal = null;
+            if ($evaluacionCompletada) {
+                $respuestasIndexadas = [];
+                foreach ($request->respuestas as $index => $respuesta) {
+                    if (!empty($respuesta) && trim($respuesta) !== '') {
+                        $respuestasIndexadas[$index] = $respuesta;
+                    }
+                }
+                $puntuacionGlobal = EvaluationHelper::calcularPuntuacionGlobalPonderada($respuestasIndexadas, $sector);
+            }
             
             // Si la evaluación está completa, marcarla como "Completada" inmediatamente
             // (antes de enviar a N8N, para que no aparezca como incompleta)
             if ($evaluacionCompletada) {
                 $this->evaluacionRepository->actualizar($idEvaluacion, [
                     'Estado' => 'Completada',
+                    'Puntuacion' => $puntuacionGlobal,
                 ]);
                 
                 Log::info('Evaluación marcada como completada', [
                     'id_evaluacion' => $idEvaluacion,
-                    'total_respuestas' => $totalRespuestas
+                    'total_respuestas' => $totalRespuestas,
+                    'puntuacion_global' => $puntuacionGlobal,
                 ]);
 
                 // Disparar notificación de evaluación completada (Patrón Observer - RF 9)
@@ -174,12 +193,6 @@ class EvaluationController extends Controller
                 }
             }
 
-            // Obtener sector del usuario
-            $sector = $usuarioCompleto->Sector ?? 'N/A';
-            
-            // Obtener ponderaciones por sector
-            $ponderaciones = EvaluationHelper::getPonderacionesPorSector($sector);
-            
             // Preparar metadatos para N8N
             $metadatos = [
                 'nombre' => $usuarioCompleto->Nombre_Usuario ?? 'N/A',
@@ -188,6 +201,7 @@ class EvaluationController extends Controller
                 'sector' => $sector,
                 'ponderaciones' => $ponderaciones,
                 'prompt' => $request->prompt ?? '',
+                'puntuacion_global' => $puntuacionGlobal,
             ];
 
             // Procesar documentos si existen - incluir contenido en base64 para N8N
@@ -537,8 +551,20 @@ class EvaluationController extends Controller
                              $evaluacion['puntuacion'] ?? 
                              $evaluacion['PUNTUACION'] ?? null;
             }
-            
-            // Asegurar que sea numérico
+
+            // Priorizar el cálculo oficial ponderado (mismo criterio del informe PDF)
+            $puntuacionCalculada = $this->calcularPuntuacionOficial($idEvaluacion, $evaluacion);
+            if ($puntuacionCalculada !== null) {
+                if ($puntuacion !== null && abs((float) $puntuacion - $puntuacionCalculada) > 0.01) {
+                    Log::warning('Puntuación almacenada difiere del cálculo oficial', [
+                        'id_evaluacion' => $idEvaluacion,
+                        'puntuacion_almacenada' => $puntuacion,
+                        'puntuacion_oficial' => $puntuacionCalculada,
+                    ]);
+                }
+                $puntuacion = $puntuacionCalculada;
+                $this->persistirPuntuacionOficial($idEvaluacion, $puntuacionCalculada);
+            }
             if ($puntuacion !== null) {
                 $puntuacion = is_numeric($puntuacion) ? (float) $puntuacion : null;
             }
@@ -707,6 +733,7 @@ class EvaluationController extends Controller
             }
 
             // Obtener resultados de la evaluación
+            $pdfRegenerado = $this->sincronizarPdfConPuntuacionOficial($idEvaluacion, $evaluacion);
             $resultados = $this->resultadosRepository->obtenerPorEvaluacion($idEvaluacion);
             
             $pdfPath = $resultados['PDF_Path'] ?? null;
@@ -1139,6 +1166,29 @@ class EvaluationController extends Controller
             $idEvaluacion = (int) $idEvaluacion;
             $puntuacion = $puntuacion !== null ? (float) $puntuacion : null;
 
+            // Verificar que la evaluación existe
+            $evaluacion = $this->evaluacionRepository->obtenerPorId($idEvaluacion);
+            if (!$evaluacion) {
+                Log::error('Evaluación no encontrada al recibir resultados de N8N', [
+                    'id_evaluacion' => $idEvaluacion
+                ]);
+                return response()->json([
+                    'error' => 'Evaluación no encontrada'
+                ], 404);
+            }
+
+            $puntuacionCalculada = $this->calcularPuntuacionOficial($idEvaluacion, $evaluacion);
+            if ($puntuacionCalculada !== null) {
+                if ($puntuacion !== null && abs($puntuacion - $puntuacionCalculada) > 0.01) {
+                    Log::warning('Puntuación de N8N difiere del cálculo oficial', [
+                        'id_evaluacion' => $idEvaluacion,
+                        'puntuacion_n8n' => $puntuacion,
+                        'puntuacion_oficial' => $puntuacionCalculada,
+                    ]);
+                }
+                $puntuacion = $puntuacionCalculada;
+            }
+
             Log::info('Recibiendo resultados de N8N', [
                 'id_evaluacion' => $idEvaluacion,
                 'tiene_html' => !empty($html),
@@ -1161,17 +1211,6 @@ class EvaluationController extends Controller
                 ], 422);
             }
 
-            // Verificar que la evaluación existe
-            $evaluacion = $this->evaluacionRepository->obtenerPorId($idEvaluacion);
-            if (!$evaluacion) {
-                Log::error('Evaluación no encontrada al recibir resultados de N8N', [
-                    'id_evaluacion' => $idEvaluacion
-                ]);
-                return response()->json([
-                    'error' => 'Evaluación no encontrada'
-                ], 404);
-            }
-
             // Convertir HTML a PDF con Browsershot (renderiza JavaScript/Chart.js)
             $pdfPath = null;
             $htmlPath = null; // Mantener HTML como backup opcional
@@ -1182,6 +1221,10 @@ class EvaluationController extends Controller
                     $html = trim($html);
                     if (empty($html)) {
                         throw new \Exception('El HTML recibido está vacío después de trim');
+                    }
+
+                    if ($puntuacion !== null) {
+                        $html = EvaluationHelper::sincronizarPuntuacionEnHtml($html, $puntuacion);
                     }
                     
                     Log::info('Iniciando conversión de HTML a PDF con Browsershot', [
@@ -1268,23 +1311,7 @@ class EvaluationController extends Controller
                         'tamaño_archivo' => filesize($fullPdfPath) . ' bytes'
                     ]);
 
-                    // Opcional: Guardar HTML como backup (comentado por defecto)
-                    // Descomentar si quieres mantener también el HTML
-                    /*
-                    $htmlPath = 'evaluations/html/' . $idEvaluacion . '_' . $timestamp . '.html';
-                    $fullHtmlPath = storage_path('app/public/' . $htmlPath);
-                    
-                    $htmlDirectory = dirname($fullHtmlPath);
-                    if (!file_exists($htmlDirectory)) {
-                        mkdir($htmlDirectory, 0755, true);
-                    }
-                    
-                    file_put_contents($fullHtmlPath, $html);
-                    Log::info('HTML guardado como backup', [
-                        'id_evaluacion' => $idEvaluacion,
-                        'html_path' => $htmlPath
-                    ]);
-                    */
+                    $this->guardarHtmlEvaluacion($idEvaluacion, $html);
 
                 } catch (\Exception $e) {
                     Log::error('Error al convertir HTML a PDF', [
@@ -1484,6 +1511,13 @@ class EvaluationController extends Controller
                 ], 400);
             }
 
+            $puntuacionOficial = $this->calcularPuntuacionOficial($idEvaluacion, $evaluacion);
+            if ($puntuacionOficial !== null) {
+                $html = EvaluationHelper::sincronizarPuntuacionEnHtml($html, $puntuacionOficial);
+                $this->persistirPuntuacionOficial($idEvaluacion, $puntuacionOficial);
+                $this->guardarHtmlEvaluacion($idEvaluacion, $html);
+            }
+
             // Generar PDF desde el HTML
             set_time_limit(120);
             ini_set('memory_limit', '512M');
@@ -1590,6 +1624,266 @@ class EvaluationController extends Controller
                 'error' => 'Error al regenerar el PDF',
                 'message' => config('app.debug') ? $e->getMessage() : 'Error interno del servidor'
             ], 500);
+        }
+    }
+
+    /**
+     * Reenvía una evaluación a N8N para regenerar el informe (cuando no hay HTML guardado).
+     */
+    public function resendToN8n(Request $request, int $idEvaluacion)
+    {
+        try {
+            $userId = SessionHelper::getUserId($request);
+            if (!$userId) {
+                return response()->json(['error' => 'Usuario no autenticado'], 401);
+            }
+
+            $evaluacion = $this->evaluacionRepository->obtenerPorId($idEvaluacion);
+            if (!$evaluacion || ($evaluacion['Id_Usuario'] ?? null) != $userId) {
+                return response()->json(['error' => 'Evaluación no encontrada o no autorizada'], 404);
+            }
+
+            $usuario = DB::table('usuario')
+                ->select('Nombre_Usuario', 'Empresa', 'Correo', 'Sector')
+                ->where('Id', $userId)
+                ->first();
+
+            if (!$usuario) {
+                return response()->json(['error' => 'Usuario no encontrado'], 404);
+            }
+
+            $respuestasBd = $this->respuestasRepository->obtenerPorEvaluacion($idEvaluacion);
+            if (empty($respuestasBd)) {
+                return response()->json(['error' => 'No hay respuestas para reenviar'], 400);
+            }
+
+            $respuestasIndexadas = EvaluationHelper::respuestasIndexadasDesdeBd($respuestasBd);
+            $respuestasFormateadas = [];
+            foreach ($respuestasIndexadas as $index => $respuestaTexto) {
+                $textoPregunta = EvaluationHelper::getQuestionText($index);
+                if ($textoPregunta) {
+                    $respuestasFormateadas[$textoPregunta] = EvaluationHelper::respuestaToValor($respuestaTexto);
+                }
+            }
+
+            $sector = $usuario->Sector ?? 'Industrial';
+            if ($sector === 'N/A' || trim((string) $sector) === '') {
+                $sector = 'Industrial';
+            }
+
+            $puntuacionGlobal = EvaluationHelper::calcularPuntuacionGlobalPonderada($respuestasIndexadas, $sector);
+            $this->persistirPuntuacionOficial($idEvaluacion, $puntuacionGlobal);
+
+            $metadatos = [
+                'nombre' => $usuario->Nombre_Usuario ?? 'N/A',
+                'empresa' => $usuario->Empresa ?? 'N/A',
+                'correo' => $usuario->Correo ?? 'N/A',
+                'sector' => $sector,
+                'ponderaciones' => EvaluationHelper::getPonderacionesPorSector($sector),
+                'prompt' => '',
+                'puntuacion_global' => $puntuacionGlobal,
+            ];
+
+            $datosN8N = $this->n8nService->formatearDatosEvaluacion($respuestasFormateadas, $metadatos, []);
+            $datosN8N['id_evaluacion'] = $idEvaluacion;
+
+            $this->n8nService->enviarEvaluacionAsync($datosN8N);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Evaluación reenviada a N8N. El informe se actualizará en unos minutos.',
+                'data' => [
+                    'id_evaluacion' => $idEvaluacion,
+                    'puntuacion_global' => $puntuacionGlobal,
+                ],
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error al reenviar evaluación a N8N', [
+                'id_evaluacion' => $idEvaluacion,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'No se pudo reenviar la evaluación a N8N',
+                'message' => config('app.debug') ? $e->getMessage() : 'Error interno del servidor',
+            ], 500);
+        }
+    }
+
+    /**
+     * Calcula la puntuación oficial ponderada a partir de las respuestas guardadas.
+     */
+    private function calcularPuntuacionOficial(int $idEvaluacion, ?array $evaluacion = null): ?float
+    {
+        $respuestas = $this->respuestasRepository->obtenerPorEvaluacion($idEvaluacion);
+        if (empty($respuestas)) {
+            return null;
+        }
+
+        $respuestasIndexadas = EvaluationHelper::respuestasIndexadasDesdeBd($respuestas);
+        $sector = 'Industrial';
+
+        $evaluacion = $evaluacion ?? $this->evaluacionRepository->obtenerPorId($idEvaluacion);
+        if ($evaluacion && !empty($evaluacion['Id_Usuario'])) {
+            $usuario = DB::table('usuario')
+                ->select('Sector')
+                ->where('Id', $evaluacion['Id_Usuario'])
+                ->first();
+            $sector = $usuario->Sector ?? 'Industrial';
+        }
+
+        if ($sector === 'N/A' || trim((string) $sector) === '') {
+            $sector = 'Industrial';
+        }
+
+        return EvaluationHelper::calcularPuntuacionGlobalPonderada($respuestasIndexadas, $sector);
+    }
+
+    private function persistirPuntuacionOficial(int $idEvaluacion, float $puntuacion): void
+    {
+        $this->evaluacionRepository->actualizar($idEvaluacion, ['Puntuacion' => $puntuacion]);
+        $this->resultadosRepository->guardarResultado($idEvaluacion, [
+            'puntuacion' => $puntuacion,
+            'Puntuacion' => $puntuacion,
+        ]);
+    }
+
+    private function guardarHtmlEvaluacion(int $idEvaluacion, string $html): string
+    {
+        $htmlPath = 'evaluations/html/' . $idEvaluacion . '_' . time() . '.html';
+        $fullHtmlPath = storage_path('app/public/' . $htmlPath);
+        $htmlDirectory = dirname($fullHtmlPath);
+
+        if (!is_dir($htmlDirectory)) {
+            mkdir($htmlDirectory, 0755, true);
+        }
+
+        file_put_contents($fullHtmlPath, $html);
+
+        return $htmlPath;
+    }
+
+    private function obtenerHtmlEvaluacion(int $idEvaluacion): ?string
+    {
+        $htmlDirectory = storage_path('app/public/evaluations/html');
+        $htmlFiles = glob($htmlDirectory . '/' . $idEvaluacion . '_*.html');
+
+        if (empty($htmlFiles)) {
+            return null;
+        }
+
+        usort($htmlFiles, fn ($a, $b) => filemtime($b) - filemtime($a));
+
+        $html = file_get_contents($htmlFiles[0]);
+
+        return $html !== false ? $html : null;
+    }
+
+    private function resolverChromePath(): ?string
+    {
+        if (PHP_OS_FAMILY !== 'Windows') {
+            return env('CHROME_PATH') ?: null;
+        }
+
+        $puppeteerCache = getenv('USERPROFILE') . '\.cache\puppeteer\chrome';
+        if (is_dir($puppeteerCache)) {
+            $chromeDirs = glob($puppeteerCache . '\win64-*\chrome-win64\chrome.exe');
+            if (!empty($chromeDirs)) {
+                return $chromeDirs[0];
+            }
+        }
+
+        foreach ([
+            'C:\Program Files\Google\Chrome\Application\chrome.exe',
+            'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+            env('CHROME_PATH'),
+        ] as $path) {
+            if ($path && file_exists($path)) {
+                return $path;
+            }
+        }
+
+        return null;
+    }
+
+    private function generarPdfDesdeHtml(int $idEvaluacion, string $html): string
+    {
+        set_time_limit(120);
+        ini_set('memory_limit', '512M');
+
+        $timestamp = time();
+        $pdfPath = 'evaluations/pdf/' . $idEvaluacion . '_' . $timestamp . '.pdf';
+        $fullPdfPath = storage_path('app/public/' . $pdfPath);
+        $pdfDirectory = dirname($fullPdfPath);
+
+        if (!is_dir($pdfDirectory)) {
+            mkdir($pdfDirectory, 0755, true);
+        }
+
+        $browsershot = Browsershot::html($html);
+        $chromePath = $this->resolverChromePath();
+        if ($chromePath) {
+            $browsershot->setChromePath($chromePath);
+        }
+
+        $browsershot->setOption('args', [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+            ])
+            ->waitUntilNetworkIdle(false)
+            ->timeout(120)
+            ->delay(3000)
+            ->format('A4')
+            ->margins(20, 20, 20, 20, 'mm')
+            ->showBackground()
+            ->save($fullPdfPath);
+
+        return $pdfPath;
+    }
+
+    /**
+     * Regenera el PDF con la puntuación oficial si existe HTML guardado.
+     */
+    private function sincronizarPdfConPuntuacionOficial(int $idEvaluacion, ?array $evaluacion = null): ?string
+    {
+        $html = $this->obtenerHtmlEvaluacion($idEvaluacion);
+        if (empty($html)) {
+            return null;
+        }
+
+        $puntuacionOficial = $this->calcularPuntuacionOficial($idEvaluacion, $evaluacion);
+        if ($puntuacionOficial === null) {
+            return null;
+        }
+
+        $html = EvaluationHelper::sincronizarPuntuacionEnHtml($html, $puntuacionOficial);
+        $this->persistirPuntuacionOficial($idEvaluacion, $puntuacionOficial);
+        $this->guardarHtmlEvaluacion($idEvaluacion, $html);
+
+        try {
+            $pdfPath = $this->generarPdfDesdeHtml($idEvaluacion, $html);
+            $this->resultadosRepository->guardarResultado($idEvaluacion, [
+                'PDF_Path' => $pdfPath,
+                'puntuacion' => $puntuacionOficial,
+                'Puntuacion' => $puntuacionOficial,
+            ]);
+
+            Log::info('PDF sincronizado con puntuación oficial', [
+                'id_evaluacion' => $idEvaluacion,
+                'puntuacion_oficial' => $puntuacionOficial,
+                'pdf_path' => $pdfPath,
+            ]);
+
+            return $pdfPath;
+        } catch (\Exception $e) {
+            Log::error('Error al sincronizar PDF con puntuación oficial', [
+                'id_evaluacion' => $idEvaluacion,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
         }
     }
 

@@ -20,6 +20,35 @@ class UsuarioRepository
     protected static ?bool $tieneFechaCreacionCache = null;
 
     /**
+     * Cache de columnas existentes en la tabla usuario
+     */
+    protected static ?array $columnasTablaCache = null;
+
+    /**
+     * Indica si una columna existe en la tabla usuario (SQL Server).
+     */
+    protected function columnaExiste(string $nombreColumna): bool
+    {
+        if (self::$columnasTablaCache === null) {
+            try {
+                $columnas = DB::select(
+                    'SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?',
+                    [$this->table]
+                );
+                self::$columnasTablaCache = array_map(
+                    static fn ($col) => $col->COLUMN_NAME,
+                    $columnas
+                );
+            } catch (\Exception $e) {
+                Log::warning('No se pudieron leer columnas de usuario', ['error' => $e->getMessage()]);
+                self::$columnasTablaCache = [];
+            }
+        }
+
+        return in_array($nombreColumna, self::$columnasTablaCache, true);
+    }
+
+    /**
      * Verifica si un correo ya existe en la base de datos
      *
      * @param string $correo
@@ -420,17 +449,26 @@ class UsuarioRepository
             Log::info('Contraseña hasheada para actualización', ['usuario_id' => $id]);
         }
 
-        // Si no se está actualizando explícitamente Fecha_Actualizacion, agregarla automáticamente
-        // Solo si hay otros campos que actualizar (no solo fechas)
-        if (!isset($datosActualizar['Fecha_Actualizacion']) && !empty($datosActualizar)) {
-            // Verificar que no sea solo una actualización de fecha de conexión
+        // Fecha_Actualizacion solo si la columna existe en la BD
+        if (
+            $this->columnaExiste('Fecha_Actualizacion')
+            && !isset($datosActualizar['Fecha_Actualizacion'])
+            && !empty($datosActualizar)
+        ) {
             $camposSinFechas = array_diff(array_keys($datosActualizar), ['Fecha_Ultima_Conexion', 'Fecha_Actualizacion']);
             if (!empty($camposSinFechas)) {
                 $datosActualizar['Fecha_Actualizacion'] = now();
             }
         }
 
-        if (empty($datosActualizar)) {
+        if (!$this->columnaExiste('Fecha_Actualizacion')) {
+            unset($datosActualizar['Fecha_Actualizacion']);
+        }
+        if (!$this->columnaExiste('Fecha_Ultima_Conexion')) {
+            unset($datosActualizar['Fecha_Ultima_Conexion']);
+        }
+
+        if (empty($datosActualizar) && !isset($datos['Activate'])) {
             Log::warning('No hay datos para actualizar', ['usuario_id' => $id, 'datos_recibidos' => array_keys($datos)]);
             return false;
         }

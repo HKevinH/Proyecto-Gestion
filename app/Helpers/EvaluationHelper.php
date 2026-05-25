@@ -473,6 +473,94 @@ class EvaluationHelper
     }
 
     /**
+     * Convierte respuestas de BD [{Id_Pregunta, Respuesta_Usuario}, ...] a índice 0-based.
+     */
+    public static function respuestasIndexadasDesdeBd(array $respuestasBd): array
+    {
+        $respuestasIndexadas = [];
+
+        foreach ($respuestasBd as $respuesta) {
+            $respuesta = (array) $respuesta;
+            $idPregunta = (int) ($respuesta['Id_Pregunta'] ?? 0);
+            if ($idPregunta > 0) {
+                $respuestasIndexadas[$idPregunta - 1] = $respuesta['Respuesta_Usuario'] ?? '';
+            }
+        }
+
+        return $respuestasIndexadas;
+    }
+
+    /**
+     * Puntaje global consolidado ponderado por marco normativo y sector.
+     * Debe coincidir con el "puntaje global consolidado" del informe PDF.
+     */
+    public static function calcularPuntuacionGlobalPonderada(array $respuestasIndexadas, string $sector = 'Industrial'): float
+    {
+        $preguntasPorCategoria = self::getPreguntasPorCategoria();
+        $ponderaciones = self::getPonderacionesPorSector($sector);
+        $categorias = ['ISO_27090_27091', 'ISO_23894', 'NIS2_AI_Act', 'ISO_42001_42005', 'CONPES_4144'];
+
+        $puntuacionPonderada = 0.0;
+        $pesoAplicado = 0.0;
+
+        foreach ($categorias as $key) {
+            $indicesPreguntas = $preguntasPorCategoria[$key] ?? [];
+            $valoresCategoria = [];
+
+            foreach ($indicesPreguntas as $indice) {
+                if (isset($respuestasIndexadas[$indice]) && !empty($respuestasIndexadas[$indice])) {
+                    $valoresCategoria[] = self::respuestaToValor($respuestasIndexadas[$indice]);
+                }
+            }
+
+            if (empty($valoresCategoria)) {
+                continue;
+            }
+
+            $promedio = array_sum($valoresCategoria) / count($valoresCategoria);
+            $puntuacionCategoria = $promedio * 100;
+            $peso = $ponderaciones[$key] ?? 0.20;
+
+            $puntuacionPonderada += $puntuacionCategoria * $peso;
+            $pesoAplicado += $peso;
+        }
+
+        if ($pesoAplicado <= 0) {
+            return 0.0;
+        }
+
+        return round($puntuacionPonderada / $pesoAplicado, 2);
+    }
+
+    /**
+     * Alinea el porcentaje mostrado en el HTML del informe con el puntaje oficial.
+     */
+    public static function sincronizarPuntuacionEnHtml(string $html, float $puntuacion): string
+    {
+        $formateada = number_format($puntuacion, 2, '.', '');
+
+        $patrones = [
+            '/(puntaje\s+global\s+consolidado\s+es\s+del(?:\s|<\/?[^>]+>)*)([\d]+[.,][\d]+)(\s*%)/iu',
+            '/(puntuaci[oó]n\s+global\s+consolidada(?:\s|<\/?[^>]+>)*)([\d]+[.,][\d]+)(\s*%)/iu',
+            '/(puntaje\s+global(?:\s|<\/?[^>]+>){0,6})([\d]+[.,][\d]+)(\s*%)/iu',
+        ];
+
+        foreach ($patrones as $patron) {
+            $html = preg_replace($patron, '${1}' . $formateada . '${3}', $html, 1) ?? $html;
+        }
+
+        // Sección 2.5: primer porcentaje tras el título de resultados consolidados
+        $html = preg_replace(
+            '/(Resultados\s+Globales\s+Consolidados[\s\S]{0,1500}?)([\d]{1,3}[.,][\d]{1,2})(\s*%)/iu',
+            '${1}' . $formateada . '${3}',
+            $html,
+            1
+        ) ?? $html;
+
+        return $html;
+    }
+
+    /**
      * Calcula la puntuación global de una evaluación basándose en las respuestas
      * La puntuación es el promedio de todos los valores * 100
      *
