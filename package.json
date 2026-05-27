@@ -5,9 +5,12 @@
     "scripts": {
         "build": "vite build",
         "dev": "vite",
-        "postinstall": "npx puppeteer browsers install chrome"
+        "docker:build-assets": "docker compose run --rm node sh -c \"npm ci && npm run build\"",
+        "docker:rebuild-node": "docker compose build --no-cache node && npm run docker:build-assets",
+        "docker:rebuild-all": "docker compose build --no-cache && npm run docker:build-assets"
     },
     "devDependencies": {
+        "@puppeteer/browsers": "^3.0.4",
         "@tailwindcss/vite": "^4.0.0",
         "@vitejs/plugin-react": "^5.1.0",
         "autoprefixer": "^10.4.21",

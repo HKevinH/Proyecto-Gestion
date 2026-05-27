@@ -5,7 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [
     laravel({
-      input: ['resources/js/app.jsx'], // o app.js si ese es tu entry
+      // incluye el entry principal usado por Blade
+      input: ['resources/js/main.jsx'],
       refresh: true,
     }),
     react(),

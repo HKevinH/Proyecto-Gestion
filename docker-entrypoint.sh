@@ -23,11 +23,27 @@ if [ -f .env ]; then
   fi
 fi
 
-# Wait for DB to be ready (try PDO connection)
+# Wait for DB to be ready (try PDO connection using the configured driver)
 echo "Waiting for database..."
 TRIES=0
 MAX_TRIES=30
-until php -r "try{new PDO('mysql:host=' . getenv('DB_HOST') . ';port=' . getenv('DB_PORT') . ';dbname=' . getenv('DB_DATABASE'), getenv('DB_USERNAME'), getenv('DB_PASSWORD')); echo 'ok';}catch(Throwable\$e){exit(1);}" >/dev/null 2>&1; do
+until php -r '
+$driver = getenv("DB_CONNECTION") ?: "mysql";
+$host = getenv("DB_HOST");
+$port = getenv("DB_PORT");
+$database = getenv("DB_DATABASE");
+$username = getenv("DB_USERNAME");
+$password = getenv("DB_PASSWORD");
+
+if ($driver === "sqlsrv") {
+    $dsn = "sqlsrv:Server={$host},{$port};Database={$database}";
+} else {
+    $dsn = "mysql:host={$host};port={$port};dbname={$database}";
+}
+
+new PDO($dsn, $username, $password);
+echo "ok";
+' >/dev/null 2>&1; do
   TRIES=$((TRIES+1))
   if [ "$TRIES" -ge "$MAX_TRIES" ]; then
     echo "Database did not become available - continuing anyway"
