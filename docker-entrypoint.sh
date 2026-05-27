@@ -52,9 +52,11 @@ echo "ok";
   sleep 2
 done
 
-# Run migrations/seeds
-echo "Running migrations and seeders..."
-php artisan migrate --force || true
-php artisan db:seed --force || true
+# Run migrations/seeds only when explicitly enabled
+if [ "${RUN_DB_MIGRATIONS:-false}" = "true" ]; then
+  echo "Running migrations and seeders..."
+  php artisan migrate --force || true
+  php artisan db:seed --force || true
+fi
 
 exec "$@"
