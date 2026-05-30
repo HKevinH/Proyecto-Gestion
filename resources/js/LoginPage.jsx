@@ -130,25 +130,12 @@ export function LoginPage({ onBack, onRegister, onLoginSuccess }) {
         password: password,
       });
 
-      if (response.status === 200) {
-        // Verificar si requiere 2FA
-        if (response.data.requires_2fa) {
-          // Guardar user_id para verificación 2FA
-          setUserData({
-            id: response.data.user_id,
-            nombre: username
-          });
-          // Mostrar modal de selección de método
-          setVerificationStep("selectMethod");
-          return;
+      if (response.status === 200 && response.data.user) {
+        setUserData(response.data.user);
+        if (onLoginSuccess) {
+          onLoginSuccess(response.data.user.nombre || username, response.data.user);
         }
-        
-        // Si no requiere 2FA, login directo (por compatibilidad)
-        if (response.data.user) {
-          setUserData(response.data.user);
-    setVerificationStep("selectMethod");
-          return;
-        }
+        return;
       }
     } catch (error) {
       console.error('Error al iniciar sesión:', error);

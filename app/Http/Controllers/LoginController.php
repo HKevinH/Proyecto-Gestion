@@ -24,6 +24,11 @@ class LoginController extends Controller
         $this->usuarioRepository = $usuarioRepository;
     }
 
+    private function isTwoFactorEnabled(): bool
+    {
+        return filter_var(config('services.login.two_factor_enabled', true), FILTER_VALIDATE_BOOLEAN);
+    }
+
     public function login(Request $request)
     {
         // Validar los datos del formulario
@@ -175,20 +180,20 @@ class LoginController extends Controller
                 }
             }
 
-            // NO guardar el usuario en sesión todavía - esperar verificación 2FA
-            // Guardar temporalmente los datos del usuario en sesión para el proceso 2FA
-            $request->session()->put('pending_2fa_user', $userData);
+            // 2FA desactivado: iniciar sesión directo con la contraseña correcta
+            $request->session()->put('user', $userData);
+            $request->session()->forget('pending_2fa_user');
+            $request->session()->forget('2fa_method');
             $request->session()->save();
-            
-            Log::info('Login exitoso, requiere selección de método 2FA', [
+
+            Log::info('Login exitoso sin verificación por código', [
                 'user_id' => $userData['id'] ?? 'NO_ID'
             ]);
 
-            // Retornar respuesta indicando que se requiere selección de método 2FA
             return response()->json([
-                'message' => 'Selecciona un método de verificación',
-                'requires_2fa' => true,
-                'user_id' => $userData['id']
+                'message' => 'Inicio de sesión exitoso',
+                'requires_2fa' => false,
+                'user' => $userData
             ], 200);
 
         } catch (\Exception $e) {
@@ -265,6 +270,13 @@ class LoginController extends Controller
      */
     public function verify2FA(Request $request)
     {
+        if (!$this->isTwoFactorEnabled()) {
+            return response()->json([
+                'message' => 'La verificación por código está desactivada',
+                'requires_2fa' => false
+            ], 410);
+        }
+
         $validator = Validator::make($request->all(), [
             'user_id' => 'required|integer',
             'code' => 'required|string|size:6',
@@ -448,6 +460,13 @@ class LoginController extends Controller
      */
     public function resend2FA(Request $request)
     {
+        if (!$this->isTwoFactorEnabled()) {
+            return response()->json([
+                'message' => 'La verificación por código está desactivada',
+                'requires_2fa' => false
+            ], 410);
+        }
+
         $validator = Validator::make($request->all(), [
             'user_id' => 'required|integer',
         ]);
@@ -532,6 +551,13 @@ class LoginController extends Controller
      */
     public function send2FACode(Request $request)
     {
+        if (!$this->isTwoFactorEnabled()) {
+            return response()->json([
+                'message' => 'La verificación por código está desactivada',
+                'requires_2fa' => false
+            ], 410);
+        }
+
         $validator = Validator::make($request->all(), [
             'user_id' => 'required|integer',
             'method' => 'required|string|in:email,sms',
@@ -681,4 +707,3 @@ class LoginController extends Controller
         }
     }
 }
-

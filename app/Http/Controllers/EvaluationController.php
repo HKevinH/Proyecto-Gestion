@@ -48,7 +48,7 @@ class EvaluationController extends Controller
     {
         // Aumentar tiempo de ejecución para procesar documentos grandes
         set_time_limit(180); // 3 minutos
-        
+
         try {
             // Validar datos de entrada
             $request->validate([
@@ -60,7 +60,7 @@ class EvaluationController extends Controller
 
             // Obtener userId de forma optimizada
             $userId = SessionHelper::getUserId($request);
-            
+
             if (!$userId) {
                 return response()->json([
                     'error' => 'Usuario no autenticado'
@@ -85,17 +85,17 @@ class EvaluationController extends Controller
 
             // Verificar si se proporciona un ID de evaluación existente
             $idEvaluacion = $request->input('id_evaluacion');
-            
+
             if ($idEvaluacion) {
                 // Verificar que la evaluación pertenece al usuario
                 $evaluacionExistente = $this->evaluacionRepository->obtenerPorId($idEvaluacion);
-                
+
                 if (!$evaluacionExistente || $evaluacionExistente['Id_Usuario'] != $userId) {
                     return response()->json([
                         'error' => 'Evaluación no encontrada o no autorizada'
                     ], 404);
                 }
-                
+
                 // Actualizar el tiempo si se proporciona
                 if ($request->tiempo !== null) {
                     $this->evaluacionRepository->actualizar($idEvaluacion, [
@@ -129,7 +129,7 @@ class EvaluationController extends Controller
                     $respuestasParaBD[$idPregunta] = $respuesta;
                 }
             }
-            
+
             // Solo guardar si hay respuestas válidas
             if (!empty($respuestasParaBD)) {
                 $respuestasGuardadas = $this->respuestasRepository->guardarRespuestas(
@@ -164,7 +164,7 @@ class EvaluationController extends Controller
                 }
                 $puntuacionGlobal = EvaluationHelper::calcularPuntuacionGlobalPonderada($respuestasIndexadas, $sector);
             }
-            
+
             // Si la evaluación está completa, marcarla como "Completada" inmediatamente
             // (antes de enviar a N8N, para que no aparezca como incompleta)
             if ($evaluacionCompletada) {
@@ -172,7 +172,7 @@ class EvaluationController extends Controller
                     'Estado' => 'Completada',
                     'Puntuacion' => $puntuacionGlobal,
                 ]);
-                
+
                 Log::info('Evaluación marcada como completada', [
                     'id_evaluacion' => $idEvaluacion,
                     'total_respuestas' => $totalRespuestas,
@@ -211,7 +211,7 @@ class EvaluationController extends Controller
                     if (isset($doc['ruta']) || isset($doc['url'])) {
                         $rutaArchivo = $doc['ruta'] ?? null;
                         $contenidoBase64 = null;
-                        
+
                         // Leer el contenido del archivo y convertirlo a base64
                         if ($rutaArchivo) {
                             try {
@@ -219,7 +219,7 @@ class EvaluationController extends Controller
                                 if (file_exists($rutaCompleta)) {
                                     $contenidoArchivo = file_get_contents($rutaCompleta);
                                     $contenidoBase64 = base64_encode($contenidoArchivo);
-                                    
+
                                     Log::info('Documento leído para N8N', [
                                         'ruta' => $rutaArchivo,
                                         'tamaño_bytes' => strlen($contenidoArchivo),
@@ -237,7 +237,7 @@ class EvaluationController extends Controller
                                 ]);
                             }
                         }
-                        
+
                         $documentosData[] = [
                             'nombre' => $doc['nombre'] ?? 'documento.pdf',
                             'indice' => $doc['indice'] ?? null,
@@ -259,6 +259,7 @@ class EvaluationController extends Controller
 
             // Agregar ID de evaluación a los datos
             $datosN8N['id_evaluacion'] = $idEvaluacion;
+            $datosN8N['callback_url'] = rtrim(config('services.app.internal_url', config('app.url')), '/') . '/api/evaluation/n8n-results';
 
             // Enviar a N8N de forma asíncrona (sin esperar respuesta)
             // N8N procesará en segundo plano y enviará resultados a /api/evaluation/n8n-results
@@ -317,7 +318,7 @@ class EvaluationController extends Controller
 
             // Obtener userId de forma optimizada
             $userId = SessionHelper::getUserId($request);
-            
+
             if (!$userId) {
                 return response()->json([
                     'error' => 'Usuario no autenticado'
@@ -372,7 +373,7 @@ class EvaluationController extends Controller
 
             // Obtener userId de forma optimizada
             $userId = SessionHelper::getUserId($request);
-            
+
             if (!$userId) {
                 return response()->json([
                     'error' => 'Usuario no autenticado'
@@ -388,7 +389,7 @@ class EvaluationController extends Controller
                 ->where('Id_Evaluacion', $idEvaluacion)
                 ->where('Id_Usuario', $userId)
                 ->exists();
-            
+
             if (!$evaluacionValida) {
                 return response()->json([
                     'error' => 'Evaluación no encontrada o no autorizada'
@@ -442,7 +443,7 @@ class EvaluationController extends Controller
         try {
             // Obtener userId de forma optimizada
             $userId = SessionHelper::getUserId($request);
-            
+
             if (!$userId) {
                 return response()->json([
                     'error' => 'Usuario no autenticado'
@@ -451,7 +452,7 @@ class EvaluationController extends Controller
 
             // Verificar que la evaluación pertenece al usuario
             $evaluacion = $this->evaluacionRepository->obtenerPorId($idEvaluacion);
-            
+
             if (!$evaluacion) {
                 return response()->json([
                     'error' => 'Evaluación no encontrada'
@@ -466,7 +467,7 @@ class EvaluationController extends Controller
 
             // Obtener las respuestas guardadas
             $respuestas = $this->respuestasRepository->obtenerPorEvaluacion($idEvaluacion);
-            
+
             // Formatear respuestas para el frontend
             $respuestasFormateadas = [];
             foreach ($respuestas as $respuesta) {
@@ -509,7 +510,7 @@ class EvaluationController extends Controller
     {
         try {
             $userId = SessionHelper::getUserId($request);
-            
+
             if (!$userId) {
                 return response()->json([
                     'error' => 'Usuario no autenticado'
@@ -518,7 +519,7 @@ class EvaluationController extends Controller
 
             // Verificar que la evaluación pertenece al usuario
             $evaluacion = $this->evaluacionRepository->obtenerPorId($idEvaluacion);
-            
+
             if (!$evaluacion) {
                 return response()->json([
                     'error' => 'Evaluación no encontrada'
@@ -533,22 +534,22 @@ class EvaluationController extends Controller
 
             // Obtener resultados de la evaluación
             $resultados = $this->resultadosRepository->obtenerPorEvaluacion($idEvaluacion);
-            
+
             $pdfPath = $resultados['PDF_Path'] ?? null;
-            
+
             // Obtener puntuación de múltiples posibles fuentes con diferentes nombres de columna
             $puntuacion = null;
             if ($resultados) {
                 // Intentar diferentes nombres de columna (case-insensitive)
-                $puntuacion = $resultados['Puntuacion'] ?? 
-                             $resultados['puntuacion'] ?? 
+                $puntuacion = $resultados['Puntuacion'] ??
+                             $resultados['puntuacion'] ??
                              $resultados['PUNTUACION'] ?? null;
             }
-            
+
             // Si no hay en Resultados, intentar desde Evaluacion
             if ($puntuacion === null && $evaluacion) {
-                $puntuacion = $evaluacion['Puntuacion'] ?? 
-                             $evaluacion['puntuacion'] ?? 
+                $puntuacion = $evaluacion['Puntuacion'] ??
+                             $evaluacion['puntuacion'] ??
                              $evaluacion['PUNTUACION'] ?? null;
             }
 
@@ -568,7 +569,7 @@ class EvaluationController extends Controller
             if ($puntuacion !== null) {
                 $puntuacion = is_numeric($puntuacion) ? (float) $puntuacion : null;
             }
-            
+
             // Log para debugging
             Log::info('Puntuación obtenida en checkPdfStatus', [
                 'id_evaluacion' => $idEvaluacion,
@@ -578,69 +579,127 @@ class EvaluationController extends Controller
                 'resultados_keys' => $resultados ? array_keys($resultados) : null,
                 'evaluacion_keys' => array_keys($evaluacion ?? [])
             ]);
-            
+
             // Verificar si el archivo PDF existe físicamente
             $pdfExists = false;
             $pdfUrl = null;
             $puedeRegenerar = false;
-            
+
             if ($pdfPath) {
                 $fullPath = storage_path('app/public/' . $pdfPath);
                 $pdfExists = file_exists($fullPath);
-                
+
                 // Si el PDF no existe físicamente, buscar PDFs alternativos (rápido, sin bloqueo)
                 if (!$pdfExists) {
                     // Buscar cualquier PDF que coincida con el patrón de esta evaluación
                     $pdfDirectory = storage_path('app/public/evaluations/pdf');
                     $alternativePdfs = glob($pdfDirectory . '/' . $idEvaluacion . '_*.pdf');
-                    
+
                     if (!empty($alternativePdfs)) {
                         // Ordenar por fecha de modificación (más reciente primero)
                         usort($alternativePdfs, function($a, $b) {
                             return filemtime($b) - filemtime($a);
                         });
-                        
+
                         $alternativePdf = $alternativePdfs[0];
                         $relativePath = str_replace(storage_path('app/public/'), '', $alternativePdf);
-                        
+
                         // Actualizar PDF_Path en BD con el PDF encontrado
                         $this->resultadosRepository->guardarResultado($idEvaluacion, [
                             'PDF_Path' => $relativePath,
                             'puntuacion' => $resultados['Puntuacion'] ?? null
                         ]);
-                        
+
                         $pdfPath = $relativePath;
                         $fullPath = $alternativePdf;
                         $pdfExists = true;
-                        
+
                         Log::info('PDF alternativo encontrado y actualizado en BD', [
                             'id_evaluacion' => $idEvaluacion,
                             'pdf_path_original' => $resultados['PDF_Path'] ?? null,
                             'pdf_path_nuevo' => $relativePath
                         ]);
                     } else {
-                        // Verificar si hay HTML guardado (solo verificar, no regenerar aquí)
+                        // Verificar si hay HTML guardado
                         $htmlDirectory = storage_path('app/public/evaluations/html');
                         $htmlFiles = glob($htmlDirectory . '/' . $idEvaluacion . '_*.html');
                         $puedeRegenerar = !empty($htmlFiles);
+
+                        // Si no hay HTML ni PDFs alternativos, pedir a N8N que regenere (solo una vez cada 30 minutos)
+                        if (empty($htmlFiles)) {
+                            $cacheKey = 'n8n:requested:' . $idEvaluacion;
+                            if (!Cache::has($cacheKey)) {
+                                try {
+                                    Log::info('No PDF/HTML encontrado — solicitando generación a N8N', ['id_evaluacion' => $idEvaluacion]);
+                                    // Enviar solicitud asíncrona a N8N
+                                    $respuestasBd = $this->respuestasRepository->obtenerPorEvaluacion($idEvaluacion);
+                                    if (!empty($respuestasBd)) {
+                                        $respuestasIndexadas = EvaluationHelper::respuestasIndexadasDesdeBd($respuestasBd);
+                                        $respuestasFormateadas = [];
+                                        foreach ($respuestasIndexadas as $index => $respuestaTexto) {
+                                            $textoPregunta = EvaluationHelper::getQuestionText($index);
+                                            if ($textoPregunta) {
+                                                $respuestasFormateadas[$textoPregunta] = EvaluationHelper::respuestaToValor($respuestaTexto);
+                                            }
+                                        }
+
+                                        $usuario = DB::table('usuario')
+                                            ->select('Nombre_Usuario', 'Empresa', 'Correo', 'Sector')
+                                            ->where('Id', $evaluacion['Id_Usuario'])
+                                            ->first();
+
+                                        $sector = $usuario->Sector ?? 'Industrial';
+                                        if ($sector === 'N/A' || trim((string) $sector) === '') {
+                                            $sector = 'Industrial';
+                                        }
+
+                                        $puntuacionGlobal = EvaluationHelper::calcularPuntuacionGlobalPonderada($respuestasIndexadas, $sector);
+                                        $metadatos = [
+                                            'nombre' => $usuario->Nombre_Usuario ?? 'N/A',
+                                            'empresa' => $usuario->Empresa ?? 'N/A',
+                                            'correo' => $usuario->Correo ?? 'N/A',
+                                            'sector' => $sector,
+                                            'ponderaciones' => EvaluationHelper::getPonderacionesPorSector($sector),
+                                            'prompt' => '',
+                                            'puntuacion_global' => $puntuacionGlobal,
+                                        ];
+
+                                        $datosN8N = $this->n8nService->formatearDatosEvaluacion($respuestasFormateadas, $metadatos, []);
+                                        $datosN8N['id_evaluacion'] = $idEvaluacion;
+                                        $datosN8N['callback_url'] = rtrim(config('services.app.internal_url', config('app.url')), '/') . '/api/evaluation/n8n-results';
+                                        $this->n8nService->enviarEvaluacionAsync($datosN8N);
+                                    }
+                                } catch (\Exception $e) {
+                                    Log::warning('No se pudo solicitar generación a N8N automáticamente', ['error' => $e->getMessage(), 'id_evaluacion' => $idEvaluacion]);
+                                }
+
+                                // Marcar en cache para evitar múltiples reintentos inmediatos
+                                Cache::put($cacheKey, true, now()->addMinutes(30));
+                            }
+                        }
                     }
                 }
-                
+
                 // Si hay PDF_Path en BD, considerar que el PDF está disponible
-                // La regeneración ocurrirá solo cuando se intente descargar (no bloquea checkPdfStatus)
-                if ($pdfPath) {
-                    $pdfExists = true; // Marcar como disponible si hay PDF_Path en BD
+                // SOLO marcarlo como disponible si el archivo físico existe (o ya se encontró un alternativo)
+                if ($pdfPath && $pdfExists) {
                     $pdfUrl = asset('storage/' . $pdfPath);
+                } elseif ($pdfPath && !$pdfExists) {
+                    Log::warning('PDF_Path existe en BD pero el archivo no existe físicamente', [
+                        'id_evaluacion' => $idEvaluacion,
+                        'pdf_path' => $pdfPath,
+                    ]);
+                    $pdfPath = null;
                 }
             }
 
             // Obtener tiempo de la evaluación (en minutos)
             $tiempo = $evaluacion['Tiempo'] ?? null;
-            
+
             // Obtener fecha de completación (usar Fecha_Completado si existe, sino Fecha)
             $fechaCompletado = null;
             $fechaParaUsar = $evaluacion['Fecha_Completado'] ?? $evaluacion['Fecha'] ?? null;
-            
+
             if ($fechaParaUsar) {
                 try {
                     // SQL Server puede devolver la fecha como string o como objeto DateTime
@@ -655,7 +714,7 @@ class EvaluationController extends Controller
                             $fechaObj = new \DateTime($fechaParaUsar);
                         }
                     }
-                    
+
                     if ($fechaObj instanceof \DateTime) {
                         $fechaCompletado = $fechaObj->format('Y-m-d\TH:i:s');
                     }
@@ -710,7 +769,7 @@ class EvaluationController extends Controller
     {
         try {
             $userId = SessionHelper::getUserId($request);
-            
+
             if (!$userId) {
                 return response()->json([
                     'error' => 'Usuario no autenticado'
@@ -719,7 +778,7 @@ class EvaluationController extends Controller
 
             // Verificar que la evaluación pertenece al usuario
             $evaluacion = $this->evaluacionRepository->obtenerPorId($idEvaluacion);
-            
+
             if (!$evaluacion) {
                 return response()->json([
                     'error' => 'Evaluación no encontrada'
@@ -735,9 +794,9 @@ class EvaluationController extends Controller
             // Obtener resultados de la evaluación
             $pdfRegenerado = $this->sincronizarPdfConPuntuacionOficial($idEvaluacion, $evaluacion);
             $resultados = $this->resultadosRepository->obtenerPorEvaluacion($idEvaluacion);
-            
+
             $pdfPath = $resultados['PDF_Path'] ?? null;
-            
+
             if (!$pdfPath) {
                 return response()->json([
                     'error' => 'PDF no encontrado para esta evaluación'
@@ -746,7 +805,7 @@ class EvaluationController extends Controller
 
             // Construir ruta completa del archivo
             $fullPath = storage_path('app/public/' . $pdfPath);
-            
+
             // Verificar que el archivo existe
             if (!file_exists($fullPath)) {
                 Log::warning('PDF no encontrado físicamente, intentando regenerar desde HTML', [
@@ -754,41 +813,41 @@ class EvaluationController extends Controller
                     'pdf_path' => $pdfPath,
                     'full_path' => $fullPath
                 ]);
-                
+
                 // Intentar regenerar el PDF desde HTML guardado
                 $htmlDirectory = storage_path('app/public/evaluations/html');
                 $htmlFiles = glob($htmlDirectory . '/' . $idEvaluacion . '_*.html');
-                
+
                 if (!empty($htmlFiles)) {
                     // Ordenar por fecha de modificación (más reciente primero)
                     usort($htmlFiles, function($a, $b) {
                         return filemtime($b) - filemtime($a);
                     });
-                    
+
                     $htmlPath = $htmlFiles[0];
                     $html = file_get_contents($htmlPath);
-                    
+
                     if (!empty($html)) {
                         Log::info('Regenerando PDF desde HTML guardado', [
                             'id_evaluacion' => $idEvaluacion,
                             'html_path' => $htmlPath
                         ]);
-                        
+
                         try {
                             // Regenerar PDF
                             set_time_limit(120);
                             ini_set('memory_limit', '512M');
-                            
+
                             $timestamp = time();
                             $newPdfPath = 'evaluations/pdf/' . $idEvaluacion . '_' . $timestamp . '.pdf';
                             $newFullPath = storage_path('app/public/' . $newPdfPath);
-                            
+
                             // Crear directorio si no existe
                             $pdfDirectory = dirname($newFullPath);
                             if (!is_dir($pdfDirectory)) {
                                 mkdir($pdfDirectory, 0755, true);
                             }
-                            
+
                             // Configurar Chrome/Chromium
                             $chromePath = null;
                             if (PHP_OS_FAMILY === 'Windows') {
@@ -799,14 +858,14 @@ class EvaluationController extends Controller
                                         $chromePath = $chromeDirs[0];
                                     }
                                 }
-                                
+
                                 if (!$chromePath) {
                                     $possiblePaths = [
                                         'C:\Program Files\Google\Chrome\Application\chrome.exe',
                                         'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
                                         env('CHROME_PATH'),
                                     ];
-                                    
+
                                     foreach ($possiblePaths as $path) {
                                         if ($path && file_exists($path)) {
                                             $chromePath = $path;
@@ -815,13 +874,13 @@ class EvaluationController extends Controller
                                     }
                                 }
                             }
-                            
+
                             $browsershot = Browsershot::html($html);
-                            
+
                             if ($chromePath) {
                                 $browsershot->setChromePath($chromePath);
                             }
-                            
+
                             $browsershot->setOption('args', [
                                     '--no-sandbox',
                                     '--disable-setuid-sandbox',
@@ -835,43 +894,58 @@ class EvaluationController extends Controller
                                 ->margins(20, 20, 20, 20, 'mm')
                                 ->showBackground()
                                 ->save($newFullPath);
-                            
+
                             // Actualizar PDF_Path en la BD
                             $this->resultadosRepository->guardarResultado($idEvaluacion, [
                                 'PDF_Path' => $newPdfPath,
                                 'puntuacion' => $resultados['Puntuacion'] ?? null
                             ]);
-                            
+
                             // Usar el nuevo PDF
                             $fullPath = $newFullPath;
                             $pdfPath = $newPdfPath;
-                            
+
                             Log::info('PDF regenerado exitosamente durante descarga', [
                                 'id_evaluacion' => $idEvaluacion,
                                 'nuevo_pdf_path' => $newPdfPath
                             ]);
-                            
+
                         } catch (\Exception $regenerateError) {
                             Log::error('Error al regenerar PDF durante descarga', [
                                 'id_evaluacion' => $idEvaluacion,
                                 'error' => $regenerateError->getMessage()
                             ]);
-                            
+
                             return response()->json([
                                 'error' => 'El archivo PDF no se encuentra en el servidor y no se pudo regenerar automáticamente',
                                 'sugerencia' => 'Puedes intentar regenerar el PDF manualmente usando el endpoint de regeneración'
                             ], 404);
                         }
                     } else {
+                        // HTML guardado vacío -> solicitar regeneración vía N8N
+                        Log::warning('HTML guardado vacío, reenviando a N8N para generar informe', [
+                            'id_evaluacion' => $idEvaluacion
+                        ]);
+
+                        $this->resendToN8n($request, $idEvaluacion);
+
                         return response()->json([
-                            'error' => 'El archivo PDF no se encuentra en el servidor y el HTML guardado está vacío'
-                        ], 404);
+                            'success' => true,
+                            'message' => 'No hay informe disponible. Se ha solicitado su generación a N8N; estará listo en unos minutos.'
+                        ], 202);
                     }
                 } else {
+                    // No hay HTML guardado -> solicitar regeneración vía N8N
+                    Log::warning('No hay HTML guardado para regenerar el PDF, reenviando a N8N', [
+                        'id_evaluacion' => $idEvaluacion
+                    ]);
+
+                    $this->resendToN8n($request, $idEvaluacion);
+
                     return response()->json([
-                        'error' => 'El archivo PDF no se encuentra en el servidor y no hay HTML guardado para regenerarlo',
-                        'sugerencia' => 'Puedes intentar regenerar el PDF desde el endpoint de regeneración si tienes los datos de la evaluación'
-                    ], 404);
+                        'success' => true,
+                        'message' => 'No hay informe disponible. Se ha solicitado su generación a N8N; estará listo en unos minutos.'
+                    ], 202);
                 }
             }
 
@@ -884,7 +958,7 @@ class EvaluationController extends Controller
 
             // Obtener el nombre del archivo para la descarga
             $filename = 'evaluacion-' . $idEvaluacion . '.pdf';
-            
+
             // Descargar el archivo con headers correctos
             return response()->download($fullPath, $filename, [
                 'Content-Type' => 'application/pdf',
@@ -916,7 +990,7 @@ class EvaluationController extends Controller
     {
         try {
             $userId = SessionHelper::getUserId($request);
-            
+
             if (!$userId) {
                 return response()->json([
                     'error' => 'Usuario no autenticado'
@@ -925,7 +999,7 @@ class EvaluationController extends Controller
 
             // Verificar que la evaluación pertenece al usuario
             $evaluacion = $this->evaluacionRepository->obtenerPorId($idEvaluacion);
-            
+
             if (!$evaluacion) {
                 return response()->json([
                     'error' => 'Evaluación no encontrada'
@@ -940,7 +1014,7 @@ class EvaluationController extends Controller
 
             // Obtener las respuestas
             $respuestas = $this->respuestasRepository->obtenerPorEvaluacion($idEvaluacion);
-            
+
             if (empty($respuestas)) {
                 return response()->json([
                     'error' => 'No se encontraron respuestas para esta evaluación'
@@ -998,7 +1072,7 @@ class EvaluationController extends Controller
 
             // Obtener userId de forma optimizada
             $userId = SessionHelper::getUserId($request);
-            
+
             if (!$userId) {
                 return response()->json([
                     'error' => 'Usuario no autenticado'
@@ -1107,12 +1181,12 @@ class EvaluationController extends Controller
     {
         // Aumentar tiempo de ejecución para procesar HTML grande
         set_time_limit(120); // 2 minutos
-        
+
         try {
             // Aumentar límites de memoria para procesar HTML grande
             ini_set('memory_limit', '512M');
             ini_set('max_execution_time', '300'); // 5 minutos
-            
+
             // Log de lo que llega (sin incluir HTML completo para evitar problemas de memoria)
             Log::info('Recibiendo petición de N8N', [
                 'has_body' => $request->has('body'),
@@ -1214,7 +1288,7 @@ class EvaluationController extends Controller
             // Convertir HTML a PDF con Browsershot (renderiza JavaScript/Chart.js)
             $pdfPath = null;
             $htmlPath = null; // Mantener HTML como backup opcional
-            
+
             if ($html) {
                 try {
                     // Validar que el HTML no esté vacío después de trim
@@ -1226,7 +1300,7 @@ class EvaluationController extends Controller
                     if ($puntuacion !== null) {
                         $html = EvaluationHelper::sincronizarPuntuacionEnHtml($html, $puntuacion);
                     }
-                    
+
                     Log::info('Iniciando conversión de HTML a PDF con Browsershot', [
                         'id_evaluacion' => $idEvaluacion,
                         'tamaño_html' => strlen($html),
@@ -1234,11 +1308,11 @@ class EvaluationController extends Controller
                         'fin_html' => substr($html, -50)
                     ]);
 
-                    // Generar nombre único para el PDF
+                    // Generar nombre único para el PDF. Solo se asigna a $pdfPath si Browsershot lo crea bien.
                     $timestamp = time();
-                    $pdfPath = 'evaluations/pdf/' . $idEvaluacion . '_' . $timestamp . '.pdf';
-                    $fullPdfPath = storage_path('app/public/' . $pdfPath);
-                    
+                    $candidatePdfPath = 'evaluations/pdf/' . $idEvaluacion . '_' . $timestamp . '.pdf';
+                    $fullPdfPath = storage_path('app/public/' . $candidatePdfPath);
+
                     // Crear directorio si no existe
                     $pdfDirectory = dirname($fullPdfPath);
                     if (!is_dir($pdfDirectory)) {
@@ -1249,7 +1323,7 @@ class EvaluationController extends Controller
 
                     // Usar Browsershot para renderizar HTML con JavaScript ejecutado
                     // Esto permite que Chart.js renderice las gráficas antes de convertir a PDF
-                    
+
                     // Configurar ruta de Chrome/Chromium para Windows
                     $chromePath = null;
                     if (PHP_OS_FAMILY === 'Windows') {
@@ -1261,7 +1335,7 @@ class EvaluationController extends Controller
                                 $chromePath = $chromeDirs[0]; // Usar la versión más reciente
                             }
                         }
-                        
+
                         // Prioridad 2: Chrome instalado en el sistema
                         if (!$chromePath) {
                             $possiblePaths = [
@@ -1269,7 +1343,7 @@ class EvaluationController extends Controller
                                 'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
                                 env('CHROME_PATH'), // Permitir configuración desde .env
                             ];
-                            
+
                             foreach ($possiblePaths as $path) {
                                 if ($path && file_exists($path)) {
                                     $chromePath = $path;
@@ -1278,9 +1352,9 @@ class EvaluationController extends Controller
                             }
                         }
                     }
-                    
+
                     $browsershot = Browsershot::html($html);
-                    
+
                     // Configurar Chrome/Chromium si se encontró
                     if ($chromePath) {
                         $browsershot->setChromePath($chromePath);
@@ -1290,7 +1364,7 @@ class EvaluationController extends Controller
                     } else {
                         Log::warning('No se encontró Chrome/Chromium, Browsershot intentará usar el predeterminado');
                     }
-                    
+
                     $browsershot->setOption('args', [
                             '--no-sandbox',
                             '--disable-setuid-sandbox',
@@ -1304,7 +1378,9 @@ class EvaluationController extends Controller
                         ->margins(20, 20, 20, 20, 'mm')
                         ->showBackground() // Mostrar fondo (importante para gráficas)
                         ->save($fullPdfPath);
-                    
+
+                    $pdfPath = $candidatePdfPath;
+
                     Log::info('PDF generado exitosamente con gráficas renderizadas', [
                         'id_evaluacion' => $idEvaluacion,
                         'pdf_path' => $pdfPath,
@@ -1319,19 +1395,19 @@ class EvaluationController extends Controller
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString()
                     ]);
-                    
+
                     // Si falla la conversión a PDF, guardar HTML como fallback
                     try {
                         $htmlPath = 'evaluations/html/' . $idEvaluacion . '_' . time() . '.html';
                         $fullHtmlPath = storage_path('app/public/' . $htmlPath);
-                        
+
                         $htmlDirectory = dirname($fullHtmlPath);
                         if (!file_exists($htmlDirectory)) {
                             mkdir($htmlDirectory, 0755, true);
                         }
-                        
+
                         file_put_contents($fullHtmlPath, $html);
-                        
+
                         Log::warning('Fallback: HTML guardado en lugar de PDF debido a error', [
                             'id_evaluacion' => $idEvaluacion,
                             'html_path' => $htmlPath
@@ -1403,7 +1479,7 @@ class EvaluationController extends Controller
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             $idEvaluacionReceived = $request->input('body.id_evaluacion') ?? $request->input('id_evaluacion');
-            
+
             Log::error('Error de validación al recibir resultados de N8N', [
                 'errors' => $e->errors(),
                 'id_evaluacion' => $idEvaluacionReceived,
@@ -1411,14 +1487,14 @@ class EvaluationController extends Controller
                 'html_vacio' => empty($request->input('html') ?? $request->input('body.html')),
                 'longitud_html' => strlen($request->input('html') ?? $request->input('body.html') ?? ''),
             ]);
-            
+
             return response()->json([
                 'error' => 'Datos inválidos',
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
             $idEvaluacionReceived = $request->input('body.id_evaluacion') ?? $request->input('id_evaluacion');
-            
+
             Log::error('Error al recibir resultados de N8N', [
                 'error' => $e->getMessage(),
                 'file' => $e->getFile(),
@@ -1450,7 +1526,7 @@ class EvaluationController extends Controller
     {
         try {
             $userId = SessionHelper::getUserId($request);
-            
+
             if (!$userId) {
                 return response()->json([
                     'error' => 'Usuario no autenticado'
@@ -1459,7 +1535,7 @@ class EvaluationController extends Controller
 
             // Verificar que la evaluación existe y pertenece al usuario
             $evaluacion = $this->evaluacionRepository->obtenerPorId($idEvaluacion);
-            
+
             if (!$evaluacion) {
                 return response()->json([
                     'error' => 'Evaluación no encontrada'
@@ -1475,19 +1551,19 @@ class EvaluationController extends Controller
             // Buscar HTML guardado para esta evaluación
             $htmlDirectory = storage_path('app/public/evaluations/html');
             $htmlFiles = glob($htmlDirectory . '/' . $idEvaluacion . '_*.html');
-            
+
             $html = null;
             $htmlPath = null;
-            
+
             if (!empty($htmlFiles)) {
                 // Ordenar por fecha de modificación (más reciente primero)
                 usort($htmlFiles, function($a, $b) {
                     return filemtime($b) - filemtime($a);
                 });
-                
+
                 $htmlPath = $htmlFiles[0];
                 $html = file_get_contents($htmlPath);
-                
+
                 Log::info('HTML encontrado para regenerar PDF', [
                     'id_evaluacion' => $idEvaluacion,
                     'html_path' => $htmlPath,
@@ -1498,7 +1574,7 @@ class EvaluationController extends Controller
                 Log::warning('No se encontró HTML guardado para regenerar PDF', [
                     'id_evaluacion' => $idEvaluacion
                 ]);
-                
+
                 return response()->json([
                     'error' => 'No se encontró HTML guardado para esta evaluación. El PDF no se puede regenerar automáticamente.',
                     'sugerencia' => 'La evaluación necesita ser reprocesada por N8N para generar el HTML nuevamente.'
@@ -1525,7 +1601,7 @@ class EvaluationController extends Controller
             $timestamp = time();
             $pdfPath = 'evaluations/pdf/' . $idEvaluacion . '_' . $timestamp . '.pdf';
             $fullPdfPath = storage_path('app/public/' . $pdfPath);
-            
+
             // Crear directorio si no existe
             $pdfDirectory = dirname($fullPdfPath);
             if (!is_dir($pdfDirectory)) {
@@ -1544,14 +1620,14 @@ class EvaluationController extends Controller
                         $chromePath = $chromeDirs[0];
                     }
                 }
-                
+
                 if (!$chromePath) {
                     $possiblePaths = [
                         'C:\Program Files\Google\Chrome\Application\chrome.exe',
                         'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
                         env('CHROME_PATH'),
                     ];
-                    
+
                     foreach ($possiblePaths as $path) {
                         if ($path && file_exists($path)) {
                             $chromePath = $path;
@@ -1560,13 +1636,13 @@ class EvaluationController extends Controller
                     }
                 }
             }
-            
+
             $browsershot = Browsershot::html($html);
-            
+
             if ($chromePath) {
                 $browsershot->setChromePath($chromePath);
             }
-            
+
             $browsershot->setOption('args', [
                     '--no-sandbox',
                     '--disable-setuid-sandbox',
@@ -1580,7 +1656,7 @@ class EvaluationController extends Controller
                 ->margins(20, 20, 20, 20, 'mm')
                 ->showBackground()
                 ->save($fullPdfPath);
-            
+
             // Actualizar PDF_Path en la base de datos
             $resultados = $this->resultadosRepository->obtenerPorEvaluacion($idEvaluacion);
             if ($resultados) {
@@ -1686,6 +1762,7 @@ class EvaluationController extends Controller
 
             $datosN8N = $this->n8nService->formatearDatosEvaluacion($respuestasFormateadas, $metadatos, []);
             $datosN8N['id_evaluacion'] = $idEvaluacion;
+            $datosN8N['callback_url'] = rtrim(config('services.app.internal_url', config('app.url')), '/') . '/api/evaluation/n8n-results';
 
             $this->n8nService->enviarEvaluacionAsync($datosN8N);
 
@@ -1769,6 +1846,17 @@ class EvaluationController extends Controller
         $htmlFiles = glob($htmlDirectory . '/' . $idEvaluacion . '_*.html');
 
         if (empty($htmlFiles)) {
+            // Fallback: construir el HTML localmente si N8N no lo generó o no quedó guardado
+            $htmlLocal = $this->construirHtmlInformeLocal($idEvaluacion);
+            if (!empty($htmlLocal)) {
+                $this->guardarHtmlEvaluacion($idEvaluacion, $htmlLocal);
+                Log::warning('HTML no encontrado en disco; se generó localmente como fallback', [
+                    'id_evaluacion' => $idEvaluacion
+                ]);
+
+                return $htmlLocal;
+            }
+
             return null;
         }
 
@@ -1777,6 +1865,203 @@ class EvaluationController extends Controller
         $html = file_get_contents($htmlFiles[0]);
 
         return $html !== false ? $html : null;
+    }
+
+    /**
+     * Construye un HTML local para el informe cuando N8N no devolvió el suyo.
+     */
+    private function construirHtmlInformeLocal(int $idEvaluacion): ?string
+    {
+        try {
+            $evaluacion = $this->evaluacionRepository->obtenerPorId($idEvaluacion);
+            if (!$evaluacion) {
+                return null;
+            }
+
+            $respuestasBd = $this->respuestasRepository->obtenerPorEvaluacion($idEvaluacion);
+            if (empty($respuestasBd)) {
+                return null;
+            }
+
+            $respuestasIndexadas = EvaluationHelper::respuestasIndexadasDesdeBd($respuestasBd);
+            $sector = 'Industrial';
+            $usuario = null;
+
+            if (!empty($evaluacion['Id_Usuario'])) {
+                $usuario = DB::table('usuario')
+                    ->select('Nombre_Usuario', 'Empresa', 'Correo', 'Sector')
+                    ->where('Id', $evaluacion['Id_Usuario'])
+                    ->first();
+
+                if ($usuario) {
+                    $sector = $usuario?->Sector ?? 'Industrial';
+                }
+            }
+
+            if ($sector === 'N/A' || trim((string) $sector) === '') {
+                $sector = 'Industrial';
+            }
+
+            $puntuacionGlobal = EvaluationHelper::calcularPuntuacionGlobalPonderada($respuestasIndexadas, $sector);
+            $chartData = EvaluationHelper::calcularDatosParaGraficas($respuestasIndexadas, $sector);
+            $ponderaciones = EvaluationHelper::getPonderacionesPorSector($sector);
+
+            $nombreUsuario = $usuario?->Nombre_Usuario ?? 'N/A';
+            $empresa = $usuario?->Empresa ?? 'N/A';
+            $correo = $usuario?->Correo ?? 'N/A';
+            $fecha = now()->format('d/m/Y H:i');
+            $estado = $evaluacion['Estado'] ?? 'Completada';
+
+            $resumen = $puntuacionGlobal >= 80
+                ? 'Nivel alto de madurez en gobernanza de IA.'
+                : ($puntuacionGlobal >= 60
+                    ? 'Nivel medio de madurez con oportunidades claras de mejora.'
+                    : 'Nivel inicial de madurez. Se recomiendan mejoras prioritarias.');
+
+            $empresaEscapada = $this->escapeHtml($empresa);
+            $nombreEscapado = $this->escapeHtml($nombreUsuario);
+            $correoEscapado = $this->escapeHtml($correo);
+            $sectorEscapado = $this->escapeHtml($sector);
+            $estadoEscapado = $this->escapeHtml($estado);
+            $fechaEscapada = $this->escapeHtml($fecha);
+            $resumenEscapado = $this->escapeHtml($resumen);
+            $respuestasCount = count($respuestasBd);
+
+            $recomendaciones = [];
+            if ($puntuacionGlobal < 80) {
+                $recomendaciones[] = 'Formalizar políticas y roles de gobernanza para la gestión de IA.';
+                $recomendaciones[] = 'Definir un plan de seguimiento con responsables y fechas de control.';
+            }
+            if ($puntuacionGlobal < 60) {
+                $recomendaciones[] = 'Priorizar controles básicos de documentación, trazabilidad y evaluación de riesgos.';
+                $recomendaciones[] = 'Implementar capacitación interna sobre uso responsable de IA.';
+            }
+
+            $preguntasHtml = '';
+            foreach ($respuestasBd as $respuesta) {
+                $respuesta = (array) $respuesta;
+                $idPregunta = (int) ($respuesta['Id_Pregunta'] ?? 0);
+                $textoPregunta = EvaluationHelper::getQuestionText($idPregunta - 1) ?? ('Pregunta ' . $idPregunta);
+                $respuestaTexto = htmlspecialchars((string) ($respuesta['Respuesta_Usuario'] ?? ''), ENT_QUOTES, 'UTF-8');
+                $preguntaEscapada = htmlspecialchars($textoPregunta, ENT_QUOTES, 'UTF-8');
+
+                $preguntasHtml .= '<li><strong>' . $preguntaEscapada . '</strong><br><span>' . $respuestaTexto . '</span></li>';
+            }
+
+            $categoriasHtml = '';
+            foreach (($chartData['categories'] ?? []) as $index => $categoria) {
+                $score = $chartData['scores'][$index] ?? 0;
+                $weight = $chartData['weights'][$index] ?? 0;
+                $categoriaEscapada = htmlspecialchars((string) $categoria, ENT_QUOTES, 'UTF-8');
+                $categoriasHtml .= '<div class="cat"><div class="cat-top"><span>' . $categoriaEscapada . '</span><strong>' . number_format((float) $score, 1) . '%</strong></div><div class="bar"><span style="width:' . max(0, min(100, (float) $score)) . '%"></span></div><small>Ponderación: ' . number_format((float) $weight, 1) . '%</small></div>';
+            }
+
+            $recomendacionesHtml = '';
+            if (!empty($recomendaciones)) {
+                foreach ($recomendaciones as $item) {
+                    $recomendacionesHtml .= '<li>' . htmlspecialchars($item, ENT_QUOTES, 'UTF-8') . '</li>';
+                }
+            } else {
+                $recomendacionesHtml = '<li>Conservar el nivel actual y continuar el monitoreo periódico.</li>';
+            }
+
+            $html = <<<HTML
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Informe evaluación {$idEvaluacion}</title>
+  <style>
+    body{font-family:Arial,sans-serif;color:#0f172a;background:#f4f7fb;margin:0;padding:0}
+    .page{max-width:980px;margin:0 auto;background:#fff;padding:32px}
+    .hero{background:linear-gradient(135deg,#1f3d93,#4a7ba7);color:#fff;border-radius:20px;padding:28px;margin-bottom:22px}
+    .hero h1{margin:0 0 10px;font-size:30px}
+    .hero p{margin:4px 0;font-size:14px;opacity:.95}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0}
+    .card{border:1px solid #e5e7eb;border-radius:16px;padding:14px;background:#f8fbff}
+    .score{font-size:40px;font-weight:800;color:#1f3d93}
+    h2{color:#173b8f;margin:24px 0 12px}
+    .cats{display:grid;gap:10px}
+    .cat{border:1px solid #e5e7eb;border-radius:14px;padding:12px}
+    .cat-top{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px}
+    .bar{height:10px;background:#dbeafe;border-radius:999px;overflow:hidden}
+    .bar span{display:block;height:100%;background:linear-gradient(90deg,#1f3d93,#4a7ba7)}
+    .two-col{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+    ul{margin:0;padding-left:18px}
+    li{margin-bottom:8px}
+    .muted{color:#475569;font-size:13px}
+    .footer{margin-top:26px;font-size:12px;color:#64748b;text-align:center}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="hero">
+      <h1>Informe de Evaluación de Gobernanza de IA</h1>
+      <p><strong>Empresa:</strong> {$empresaEscapada}</p>
+      <p><strong>Usuario:</strong> {$nombreEscapado} | <strong>Correo:</strong> {$correoEscapado}</p>
+      <p><strong>Sector:</strong> {$sectorEscapado} | <strong>Estado:</strong> {$estadoEscapado} | <strong>Fecha:</strong> {$fechaEscapada}</p>
+    </section>
+
+    <div class="grid">
+      <div class="card">
+        <div class="muted">Puntuación global</div>
+        <div class="score">{$puntuacionGlobal}%</div>
+      </div>
+      <div class="card">
+        <div class="muted">Preguntas respondidas</div>
+        <div class="score" style="font-size:34px;">{$respuestasCount}</div>
+      </div>
+      <div class="card">
+        <div class="muted">Resumen</div>
+        <div style="margin-top:10px;font-weight:700;line-height:1.5;">{$resumenEscapado}</div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <section>
+        <h2>Resultados por categoría</h2>
+        <div class="cats">{$categoriasHtml}</div>
+      </section>
+      <section>
+        <h2>Recomendaciones</h2>
+        <ul>{$recomendacionesHtml}</ul>
+        <h2 style="margin-top:22px;">Ponderaciones</h2>
+        <ul>
+HTML;
+
+            foreach ($ponderaciones as $key => $peso) {
+                $html .= '<li>' . $this->escapeHtml((string) $key) . ': ' . number_format((float) $peso * 100, 1) . '%</li>';
+            }
+
+            $html .= <<<HTML
+        </ul>
+      </section>
+    </div>
+
+    <h2>Respuestas registradas</h2>
+    <ul>{$preguntasHtml}</ul>
+
+    <div class="footer">Informe generado localmente por Laravel como respaldo cuando N8N no devolvió el HTML.</div>
+  </div>
+</body>
+</html>
+HTML;
+
+            return $html;
+        } catch (\Throwable $e) {
+            Log::error('Error al construir HTML local del informe', [
+                'id_evaluacion' => $idEvaluacion,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function escapeHtml(string $value): string
+    {
+        return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
     }
 
     private function resolverChromePath(): ?string
@@ -1888,4 +2173,3 @@ class EvaluationController extends Controller
     }
 
 }
-

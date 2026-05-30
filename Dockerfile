@@ -17,8 +17,13 @@ RUN apt-get update && apt-get install -y \
     apt-transport-https \
     unixodbc-dev \
     curl \
+    nodejs \
+    npm \
+    chromium \
     && docker-php-ext-configure gd --with-jpeg --with-freetype \
     && docker-php-ext-install -j$(nproc) gd intl pdo pdo_mysql zip bcmath xml opcache
+
+ENV CHROME_PATH=/usr/bin/chromium
 
 RUN curl -sSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \

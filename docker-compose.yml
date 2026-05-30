@@ -5,11 +5,14 @@ services:
     build: .
     volumes:
       - ./:/var/www/html
+      - ./docker-entrypoint.sh:/usr/local/bin/docker-entrypoint.sh
     ports:
       - "8000:8000"
     environment:
       APP_ENV: local
       APP_DEBUG: 'true'
+      APP_INTERNAL_URL: http://app:8000
+      LOGIN_2FA_ENABLED: 'false'
       DB_CONNECTION: sqlsrv
       DB_HOST: SQL9001.site4now.net
       DB_PORT: 1433
@@ -31,7 +34,7 @@ services:
       TWILIO_ACCOUNT_SID: AC0c16a8323259c0863503e01f6ac97c31
       TWILIO_AUTH_TOKEN: b6668110c068f89abf8d2d63936d6f6b
       TWILIO_PHONE_NUMBER: "+16788248182"
-      N8N_WEBHOOK_URL: http://n8n:5678/webhook-test/Evaluacion
+      N8N_WEBHOOK_URL: http://n8n:5678/webhook/Evaluacion
     depends_on:
       - node
       - n8n

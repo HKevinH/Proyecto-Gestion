@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import {
   CheckCircle2,
@@ -92,6 +92,8 @@ export function EvaluationCompletedPage({ onBack, onDownloadPdf }) {
   const [puntuacion, setPuntuacion] = useState(null);
   const [error, setError] = useState(null);
   const [chartData, setChartData] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const regenerationRequestedRef = useRef(false);
   
   // Estado para datos de la evaluación
   const [evaluationData, setEvaluationData] = useState({
@@ -199,6 +201,34 @@ export function EvaluationCompletedPage({ onBack, onDownloadPdf }) {
               clearInterval(pollInterval);
             }
           } else {
+            // Disparar una sola vez la regeneración si el PDF aún no existe
+            if (!regenerationRequestedRef.current) {
+              regenerationRequestedRef.current = true;
+
+              try {
+                const regenResponse = await axiosClient.post(`/api/evaluation/${id}/regenerate-pdf`, {}, { timeout: 180000 });
+                const regeneratedPdfUrl = regenResponse.data?.data?.pdf_url;
+
+                if (regeneratedPdfUrl) {
+                  setPdfReady(true);
+                  setPdfUrl(regeneratedPdfUrl);
+                  setIsChecking(false);
+
+                  if (pollInterval) {
+                    clearInterval(pollInterval);
+                  }
+                  return;
+                }
+              } catch (regenErr) {
+                console.error('No se pudo regenerar automáticamente el PDF:', regenErr);
+                try {
+                  await axiosClient.post(`/api/evaluation/${id}/resend-n8n`, {}, { timeout: 60000 });
+                } catch (resendErr) {
+                  console.error('No se pudo reenviar a N8N desde el polling:', resendErr);
+                }
+              }
+            }
+
             attempts++;
             
             // Si excedemos el máximo de intentos, mostrar error
@@ -243,7 +273,7 @@ export function EvaluationCompletedPage({ onBack, onDownloadPdf }) {
         clearInterval(pollInterval);
       }
     };
-  }, [id]);
+  }, [id, refreshKey]);
 
   // Obtener datos para las gráficas
   useEffect(() => {
@@ -467,19 +497,35 @@ export function EvaluationCompletedPage({ onBack, onDownloadPdf }) {
 
       // Intentar regenerar PDF con puntuación oficial (si hay HTML guardado)
       try {
-        await axiosClient.post(`/api/evaluation/${id}/regenerate-pdf`, {}, { timeout: 180000 });
+        const regenResponse = await axiosClient.post(`/api/evaluation/${id}/regenerate-pdf`, {}, { timeout: 180000 });
+
+        // Si el backend decidió reenviar a N8N, no intentamos descargar todavía
+        if (regenResponse.status === 202) {
+          alert('El informe se está regenerando. Espera 1-3 minutos y vuelve a descargar.');
+          return;
+        }
       } catch (regenErr) {
-        if (regenErr.response?.status === 404) {
+        // Cualquier fallo de regeneración local debe caer al flujo de N8N
+        try {
           await axiosClient.post(`/api/evaluation/${id}/resend-n8n`, {}, { timeout: 60000 });
-          alert('El informe se está regenerando con la puntuación correcta. Espera 1-3 minutos y vuelve a descargar.');
+          alert('El informe no estaba listo y se reenvio a N8N para regenerarlo. Espera 1-3 minutos y vuelve a descargar.');
+          return;
+        } catch (resendErr) {
+          console.error('No se pudo reenviar a N8N:', resendErr);
+          alert('No se pudo regenerar el informe ni reenviarlo a N8N. Intenta de nuevo en unos minutos.');
           return;
         }
       }
-      
+
       const response = await axiosClient.get(`/api/evaluation/${id}/download-pdf`, {
         responseType: 'blob',
         timeout: 180000,
       });
+
+      if (response.status === 202) {
+        alert('El informe se esta regenerando. Espera 1-3 minutos y vuelve a descargar.');
+        return;
+      }
 
       // Crear un blob del PDF descargado
       const blob = new Blob([response.data], { type: 'application/pdf' });
@@ -509,6 +555,47 @@ export function EvaluationCompletedPage({ onBack, onDownloadPdf }) {
         document.body.removeChild(link);
     } else {
         alert('Error al descargar el PDF. Por favor, intenta más tarde.');
+      }
+    }
+  };
+
+  const handleRegeneratePdf = async () => {
+    if (!id) {
+      console.error('No hay ID de evaluación para regenerar');
+      return;
+    }
+
+    try {
+      const token = document.head?.querySelector('meta[name="csrf-token"]');
+      if (token) {
+        axios.defaults.headers.common['X-CSRF-TOKEN'] = token.content;
+      }
+
+      const axiosClient = window.axios || axios;
+      regenerationRequestedRef.current = true;
+      setIsChecking(true);
+      setError(null);
+      setPdfReady(false);
+
+      const response = await axiosClient.post(`/api/evaluation/${id}/regenerate-pdf`, {}, { timeout: 180000 });
+
+      if (response.status === 202) {
+        alert('El informe se está regenerando. Espera 1-3 minutos y vuelve a intentar descargarlo.');
+        setRefreshKey(prev => prev + 1);
+        return;
+      }
+
+      alert('El PDF se regeneró correctamente. Ya puedes descargarlo.');
+      setRefreshKey(prev => prev + 1);
+    } catch (err) {
+      try {
+        const axiosClient = window.axios || axios;
+        await axiosClient.post(`/api/evaluation/${id}/resend-n8n`, {}, { timeout: 60000 });
+        alert('No había PDF listo. Se reenvió la evaluación a N8N para regenerarlo.');
+        setRefreshKey(prev => prev + 1);
+      } catch (resendErr) {
+        console.error('No se pudo regenerar ni reenviar a N8N:', resendErr);
+        setError('No se pudo regenerar el PDF. Intenta nuevamente en unos minutos.');
       }
     }
   };
@@ -641,10 +728,18 @@ export function EvaluationCompletedPage({ onBack, onDownloadPdf }) {
                 </ul>
               </div>
 
-              {/* ÚNICO botón: Descargar PDF */}
-              <button className="btn-secondary" onClick={handleDownloadPdf}>
-                <Download size={18} /> Descargar PDF
-              </button>
+              <div style={{ display: 'grid', gap: 10 }}>
+                <button className="btn-secondary" onClick={handleDownloadPdf}>
+                  <Download size={18} /> Descargar PDF
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={handleRegeneratePdf}
+                  style={{ background: 'rgba(255,255,255,.1)' }}
+                >
+                  <Sparkles size={18} /> Regenerar PDF
+                </button>
+              </div>
 
               {/* Gráficas */}
               {chartData && chartData.categories && (

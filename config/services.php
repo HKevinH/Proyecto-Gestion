@@ -36,7 +36,15 @@ return [
     ],
 
     'n8n' => [
-        'webhook_url' => env('N8N_WEBHOOK_URL', 'http://localhost:5678/webhook-test/Evaluacion'),
+        'webhook_url' => env('N8N_WEBHOOK_URL', 'http://n8n:5678/webhook/Evaluacion'),
+    ],
+
+    'app' => [
+        'internal_url' => env('APP_INTERNAL_URL', env('APP_URL', 'http://localhost:8000')),
+    ],
+
+    'login' => [
+        'two_factor_enabled' => env('LOGIN_2FA_ENABLED', true),
     ],
 
     'twilio' => [

@@ -26,10 +26,23 @@ class N8nService
     public function __construct()
     {
         $this->webhookUrl = config('services.n8n.webhook_url', env('N8N_WEBHOOK_URL', ''));
+        $this->webhookUrl = $this->normalizeDockerWebhookUrl($this->webhookUrl);
         
         if (empty($this->webhookUrl)) {
             Log::warning('N8N webhook URL no configurada. Usa N8N_WEBHOOK_URL en .env');
         }
+    }
+
+    private function normalizeDockerWebhookUrl(string $url): string
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+        $port = parse_url($url, PHP_URL_PORT);
+
+        if (($host === 'localhost' || $host === '127.0.0.1') && (int) $port === 5678 && file_exists('/.dockerenv')) {
+            return str_replace('://' . $host . ':5678', '://n8n:5678', $url);
+        }
+
+        return $url;
     }
 
     /**
@@ -120,13 +133,20 @@ class N8nService
                 'id_evaluacion' => $datos['id_evaluacion'] ?? null
             ]);
 
-            // Ejecutar en un proceso separado o usar dispatch
-            // Por ahora, ejecutamos con timeout largo pero sin esperar respuesta
-            // Usar timeout de 60 segundos solo para la conexión inicial, no para procesar
-            Http::timeout(60) // Timeout más largo para envío de datos grandes
+            // Solo confirmamos que N8N recibió el webhook. El HTML/PDF vuelve por callback.
+            $response = Http::timeout($this->timeoutAsync)
+                ->connectTimeout(3)
                 ->withoutVerifying() // No verificar SSL si es necesario
-                ->post($this->webhookUrl, $datos)
-                ->throw(); // Solo lanzar error si falla completamente (no por timeout)
+                ->post($this->webhookUrl, $datos);
+
+            if ($response->failed()) {
+                Log::warning('N8N respondió con error al recibir evaluación (asíncrono)', [
+                    'id_evaluacion' => $datos['id_evaluacion'] ?? null,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+                return;
+            }
 
             Log::info('Evaluación enviada a N8N exitosamente (procesamiento asíncrono)', [
                 'id_evaluacion' => $datos['id_evaluacion'] ?? null,
@@ -207,8 +227,10 @@ class N8nService
             
             // Información adicional
             'timestamp' => now()->toIso8601String(),
-            'version' => '1.0'
+            'version' => '1.0',
+
+            // URL interna para que N8N pueda devolver el HTML/PDF al backend
+            'callback_url' => rtrim(config('services.app.internal_url', config('app.url')), '/') . '/api/evaluation/n8n-results',
         ];
     }
 }
-

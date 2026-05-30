@@ -119,34 +119,25 @@ export function AdminLoginPage({ onBack, onLoginSuccess }) {
         password: password,
       });
 
-      if (response.status === 200) {
-        // Flujo actualizado del backend: primero selecciona método 2FA
-        if (response.data.requires_2fa && response.data.user_id) {
-          setUserData({
-            id: response.data.user_id,
-            nombre: username,
-          });
-          setVerificationStep("selectMethod");
+      if (response.status === 200 && response.data.user) {
+        const role = response.data.user.rol || response.data.user.role || "usuario";
+        if (role !== "admin") {
+          setError("Este usuario no tiene permisos de administrador");
           return;
         }
 
-        // Compatibilidad si el backend devuelve los datos completos
-        if (response.data.user) {
-          const role = response.data.user.rol || response.data.user.role || "usuario";
-          if (role !== "admin") {
-            setError("Este usuario no tiene permisos de administrador");
-            return;
-          }
-          setUserData({
-            id: response.data.user.id,
-            nombre: response.data.user.nombre || response.data.user.username || username,
-          });
-          setVerificationStep("selectMethod");
-          return;
-        }
+        setUserData({
+          id: response.data.user.id,
+          nombre: response.data.user.nombre || response.data.user.username || username,
+        });
 
-        setError("No fue posible iniciar sesión. Intente nuevamente.");
+        if (onLoginSuccess) {
+          onLoginSuccess(response.data.user.nombre || username, response.data.user);
+        }
+        return;
       }
+
+      setError("No fue posible iniciar sesión. Intente nuevamente.");
     } catch (error) {
       console.error("Error al iniciar sesión:", error);
 
