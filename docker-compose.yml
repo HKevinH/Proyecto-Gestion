@@ -31,20 +31,10 @@ services:
       TWILIO_ACCOUNT_SID: AC0c16a8323259c0863503e01f6ac97c31
       TWILIO_AUTH_TOKEN: b6668110c068f89abf8d2d63936d6f6b
       TWILIO_PHONE_NUMBER: "+16788248182"
+      N8N_WEBHOOK_URL: http://n8n:5678/webhook-test/Evaluacion
     depends_on:
       - node
-
-  db:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: secret
-      MYSQL_DATABASE: proyecto_gestion
-      MYSQL_USER: laravel
-      MYSQL_PASSWORD: secret
-    ports:
-      - "3306:3306"
-    volumes:
-      - db_data:/var/lib/mysql
+      - n8n
 
   node:
     image: node:18
@@ -52,17 +42,20 @@ services:
     volumes:
       - ./:/var/www/html
     command: sh -c "npm ci --silent && npm run build --silent"
-    depends_on:
-      - db
 
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin:latest
-    environment:
-      PMA_HOST: db
-      PMA_USER: root
-      PMA_PASSWORD: secret
+  n8n:
+    image: n8nio/n8n:latest
     ports:
-      - "8080:80"
+      - "5678:5678"
+    environment:
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/
+      N8N_EDITOR_BASE_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: America/Bogota
+    volumes:
+      - n8n_data:/home/node/.n8n
 
 volumes:
-  db_data:
+  n8n_data:

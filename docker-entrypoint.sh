@@ -9,10 +9,15 @@ if [ ! -f .env ] && [ -f .env.docker ]; then
   echo "Copied .env.docker to .env"
 fi
 
-# Install composer dependencies if vendor not present
-if [ ! -d "vendor" ]; then
+# Install composer dependencies if autoload is missing
+if [ ! -f "vendor/autoload.php" ]; then
   echo "Installing Composer dependencies..."
-  composer install --no-interaction --prefer-dist --optimize-autoloader || true
+  composer install --no-interaction --prefer-dist --optimize-autoloader
+fi
+
+if [ ! -f "vendor/autoload.php" ]; then
+  echo "Composer dependencies are unavailable; cannot start the application."
+  exit 1
 fi
 
 # Generate APP_KEY if missing
