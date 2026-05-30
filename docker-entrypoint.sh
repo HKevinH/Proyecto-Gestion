@@ -22,7 +22,7 @@ fi
 
 # Generate APP_KEY if missing
 if [ -f .env ]; then
-  KEY=$(php -r "require 'vendor/autoload.php'; echo getenv('APP_KEY');" 2>/dev/null || true)
+  KEY=$(grep -E '^APP_KEY=.+$' .env | cut -d '=' -f2-)
   if [ -z "$KEY" ]; then
     php artisan key:generate --force || true
   fi

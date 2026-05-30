@@ -40,7 +40,7 @@ services:
       - n8n
 
   node:
-    image: node:18
+    image: node:22
     working_dir: /var/www/html
     volumes:
       - ./:/var/www/html
